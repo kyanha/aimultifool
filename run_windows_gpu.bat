@@ -17,6 +17,7 @@ set "WHEEL_NAME=llama_cpp_python-0.3.16-cp312-cp312-win_amd64.whl"
 set "WHEEL_URL=https://aimultifool.com/llama_cpp_python-0.3.16-cp312-cp312-win_amd64.whl"
 set "WHEEL_DIR=%SCRIPT_DIR%\llama.cpp"
 set "WHEEL_PATH=%WHEEL_DIR%\%WHEEL_NAME%"
+set "CHECKSUM_MANIFEST=%SCRIPT_DIR%\checksums.sha256"
 
 echo ----------------------------------------------------------------
 echo   aiMultiFool Suite - GPU Setup ^& Launch Script v0.1.9 (Windows)
@@ -25,35 +26,55 @@ echo ----------------------------------------------------------------
 :: 0. Setup Portable Python
 if not exist "%PYTHON_PORTABLE_DIR%\python.exe" (
     echo [PYTHON] Portable Python not found. Setting up...
-    
+
     :: Create python_portable directory
     if not exist "%PYTHON_PORTABLE_DIR%" mkdir "%PYTHON_PORTABLE_DIR%"
-    
+
+    :: If a cached tarball exists, verify it before trusting it. A mismatch means the
+    :: cache is bad (corrupted or tampered) - remove it and fall through to a fresh download.
+    if exist "%PYTHON_PORTABLE_TAR_PATH%" (
+        call "%SCRIPT_DIR%\verify_hash.bat" "%PYTHON_PORTABLE_TAR_PATH%" "%PYTHON_PORTABLE_TAR%" "%CHECKSUM_MANIFEST%"
+        if "!VERIFY_RESULT!"=="MISMATCH" (
+            echo [SECURITY] Cached %PYTHON_PORTABLE_TAR% failed hash verification.
+            del "%PYTHON_PORTABLE_TAR_PATH%" 2>nul
+            if exist "%PYTHON_PORTABLE_TAR_PATH%" (
+                echo [CRITICAL] Could not remove bad cached file. Aborting.
+                exit /b 1
+            ) else (
+                echo [SECURITY] Removed bad cached file; will re-download.
+            )
+        ) else if "!VERIFY_RESULT!"=="UNVERIFIED" (
+            echo [WARNING] No pinned hash for %PYTHON_PORTABLE_TAR%; skipping integrity check.
+        )
+    )
+
     :: Download portable Python if tar doesn't exist
     if not exist "%PYTHON_PORTABLE_TAR_PATH%" (
         echo [NETWORK] Downloading portable Python 3.12 ^(~50MB^)...
         echo [SOURCE]  %PYTHON_PORTABLE_URL%
-        
-        :: Try curl first (available on Windows 10+), then PowerShell
-        where curl >nul 2>&1
-        if !errorlevel! equ 0 (
-            curl -L --progress-bar -o "%PYTHON_PORTABLE_TAR_PATH%" "%PYTHON_PORTABLE_URL%"
-            if !errorlevel! neq 0 (
-                echo [ERROR] Download failed with curl.
+
+        call "%SCRIPT_DIR%\download_file.bat" "%PYTHON_PORTABLE_URL%" "%PYTHON_PORTABLE_TAR_PATH%"
+        if !errorlevel! neq 0 (
+            echo [ERROR] Download failed with all available mechanisms ^(curl/PowerShell/certutil^).
+            echo [FALLBACK] Will use system Python instead.
+        )
+
+        :: A freshly downloaded file that fails verification is not recoverable by
+        :: retrying - abort rather than loop.
+        if exist "%PYTHON_PORTABLE_TAR_PATH%" (
+            call "%SCRIPT_DIR%\verify_hash.bat" "%PYTHON_PORTABLE_TAR_PATH%" "%PYTHON_PORTABLE_TAR%" "%CHECKSUM_MANIFEST%"
+            if "!VERIFY_RESULT!"=="MISMATCH" (
+                echo [CRITICAL] Downloaded %PYTHON_PORTABLE_TAR% failed hash verification. Aborting.
                 del "%PYTHON_PORTABLE_TAR_PATH%" 2>nul
-                echo [FALLBACK] Will use system Python instead.
-            )
-        ) else (
-            echo [INFO] Using PowerShell for download...
-            powershell -Command "& { $ProgressPreference = 'Continue'; Invoke-WebRequest -Uri '%PYTHON_PORTABLE_URL%' -OutFile '%PYTHON_PORTABLE_TAR_PATH%' }"
-            if !errorlevel! neq 0 (
-                echo [ERROR] Download failed with PowerShell.
-                del "%PYTHON_PORTABLE_TAR_PATH%" 2>nul
-                echo [FALLBACK] Will use system Python instead.
+                exit /b 1
+            ) else if "!VERIFY_RESULT!"=="UNVERIFIED" (
+                echo [WARNING] No pinned hash for %PYTHON_PORTABLE_TAR%; skipping integrity check.
+            ) else (
+                echo [SECURITY] Hash verified.
             )
         )
     )
-    
+
     :: Extract portable Python if tar exists
     if exist "%PYTHON_PORTABLE_TAR_PATH%" (
         echo [EXTRACT] Extracting portable Python...
@@ -99,31 +120,46 @@ if not exist "%WHEEL_DIR%" (
 
 :: 2. Check if the wheel exists locally, if not attempt download
 if exist "%WHEEL_PATH%" (
-    echo [FOUND] Using existing local Multi-Arch wheel: %WHEEL_NAME%
-) else (
+    call "%SCRIPT_DIR%\verify_hash.bat" "%WHEEL_PATH%" "%WHEEL_NAME%" "%CHECKSUM_MANIFEST%"
+    if "!VERIFY_RESULT!"=="MISMATCH" (
+        echo [SECURITY] Cached %WHEEL_NAME% failed hash verification.
+        del "%WHEEL_PATH%" 2>nul
+        if exist "%WHEEL_PATH%" (
+            echo [CRITICAL] Could not remove bad cached file. Aborting.
+            exit /b 1
+        ) else (
+            echo [SECURITY] Removed bad cached file; will re-download.
+        )
+    ) else if "!VERIFY_RESULT!"=="UNVERIFIED" (
+        echo [WARNING] No pinned hash for %WHEEL_NAME%; skipping integrity check.
+        echo [FOUND] Using existing local Multi-Arch wheel: %WHEEL_NAME%
+    ) else (
+        echo [FOUND] Using existing local Multi-Arch wheel: %WHEEL_NAME%
+    )
+)
+
+if not exist "%WHEEL_PATH%" (
     echo [MISSING] Universal wheel not found locally.
     echo [NETWORK] Starting download ^(~235MB^) to ensure GPU acceleration...
     echo [SOURCE]  %WHEEL_URL%
-    
-    :: Try curl first (available on Windows 10+), then PowerShell
-    where curl >nul 2>&1
-    if !errorlevel! equ 0 (
-        curl -L --progress-bar -o "%WHEEL_PATH%" "%WHEEL_URL%"
-        if !errorlevel! neq 0 (
-            echo [ERROR] Download failed with curl.
-            del "%WHEEL_PATH%" 2>nul
-        )
-    ) else (
-        echo [INFO] Using PowerShell for download...
-        powershell -Command "& { $ProgressPreference = 'Continue'; Invoke-WebRequest -Uri '%WHEEL_URL%' -OutFile '%WHEEL_PATH%' }"
-        if !errorlevel! neq 0 (
-            echo [ERROR] Download failed with PowerShell.
-            del "%WHEEL_PATH%" 2>nul
-        )
+
+    call "%SCRIPT_DIR%\download_file.bat" "%WHEEL_URL%" "%WHEEL_PATH%"
+    if !errorlevel! neq 0 (
+        echo [ERROR] Download failed with all available mechanisms ^(curl/PowerShell/certutil^).
     )
-    
+
     if exist "%WHEEL_PATH%" (
-        echo [SUCCESS] Multi-Arch wheel downloaded successfully!
+        call "%SCRIPT_DIR%\verify_hash.bat" "%WHEEL_PATH%" "%WHEEL_NAME%" "%CHECKSUM_MANIFEST%"
+        if "!VERIFY_RESULT!"=="MISMATCH" (
+            echo [CRITICAL] Downloaded %WHEEL_NAME% failed hash verification. Aborting.
+            del "%WHEEL_PATH%" 2>nul
+            exit /b 1
+        ) else if "!VERIFY_RESULT!"=="UNVERIFIED" (
+            echo [WARNING] No pinned hash for %WHEEL_NAME%; skipping integrity check.
+            echo [SUCCESS] Multi-Arch wheel downloaded successfully!
+        ) else (
+            echo [SUCCESS] Multi-Arch wheel downloaded and verified successfully!
+        )
     ) else (
         echo [ERROR] Download failed. The app may run slowly without GPU acceleration.
     )

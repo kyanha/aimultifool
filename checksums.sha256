@@ -1,0 +1,15 @@
+# Pinned SHA-256 hashes for third-party binaries fetched by run_*.{bat,sh}
+# Format: filename=sha256hash
+#
+# cpython tarballs verified against the matching upstream astral-sh/python-build-standalone
+# GitHub release (tag 20260114) asset — see docs/SECURITY_AUDIT.md.
+#
+# llama_cpp_python wheels have no upstream release to verify against (abetlen/llama-cpp-python
+# does not publish prebuilt CUDA wheels); these are self-hosted by the repo owner and marked
+# UNVERIFIED until independently confirmed (e.g. by rebuilding via llama.cpp/build_windows.bat
+# and comparing hashes), at which point replace UNVERIFIED with the confirmed hash.
+
+cpython-3.12.12+20260114-x86_64-pc-windows-msvc-install_only_stripped.tar.gz=65544affdc45a3755db3a08fd0b36c5b590bb49337b99a19b8840c33189fe75e
+cpython-3.12.12+20260114-x86_64-unknown-linux-gnu-install_only.tar.gz=3f3b70198c2beda7e82829138096684faa25b5e2e64b543fa24e28587db6513c
+llama_cpp_python-0.3.16-cp312-cp312-win_amd64.whl=UNVERIFIED
+llama_cpp_python-0.3.16-cp312-cp312-linux_x86_64.whl=UNVERIFIED
