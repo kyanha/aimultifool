@@ -11,6 +11,9 @@ PYTHON_PORTABLE_TAR="cpython-3.12.12+20260114-x86_64-unknown-linux-gnu-install_o
 PYTHON_PORTABLE_URL="https://aimultifool.com/$PYTHON_PORTABLE_TAR"
 PYTHON_PORTABLE_TAR_PATH="$PYTHON_PORTABLE_DIR/$PYTHON_PORTABLE_TAR"
 PYTHON_CMD="python3"
+CHECKSUM_MANIFEST="$SCRIPT_DIR/checksums.sha256"
+source "$SCRIPT_DIR/verify_hash.sh"
+source "$SCRIPT_DIR/download_file.sh"
 
 echo "----------------------------------------------------------------"
 echo "  aiMultiFool Suite - CPU-Only Setup & Launch Script v0.1.9"
@@ -19,32 +22,56 @@ echo "----------------------------------------------------------------"
 # 0. Setup Portable Python
 if [ ! -f "$PYTHON_PORTABLE_DIR/bin/python3" ]; then
     echo "[PYTHON] Portable Python not found. Setting up..."
-    
+
     # Create python_portable directory
     mkdir -p "$PYTHON_PORTABLE_DIR"
-    
+
+    # If a cached tarball exists, verify it before trusting it. A mismatch here means the
+    # cache is bad (corrupted or tampered) - remove it and fall through to a fresh download.
+    if [ -f "$PYTHON_PORTABLE_TAR_PATH" ]; then
+        verify_artifact "$PYTHON_PORTABLE_TAR_PATH" "$PYTHON_PORTABLE_TAR" "$CHECKSUM_MANIFEST"
+        case "$VERIFY_RESULT" in
+            MISMATCH)
+                echo "[SECURITY] Cached $PYTHON_PORTABLE_TAR failed hash verification."
+                if rm -f "$PYTHON_PORTABLE_TAR_PATH"; then
+                    echo "[SECURITY] Removed bad cached file; will re-download."
+                else
+                    echo "[CRITICAL] Could not remove bad cached file. Aborting."
+                    exit 1
+                fi
+                ;;
+            UNVERIFIED)
+                echo "[WARNING] No pinned hash for $PYTHON_PORTABLE_TAR; skipping integrity check."
+                ;;
+        esac
+    fi
+
     # Download portable Python if tar doesn't exist
     if [ ! -f "$PYTHON_PORTABLE_TAR_PATH" ]; then
         echo "[NETWORK] Downloading portable Python 3.12 (~50MB)..."
         echo "[SOURCE]  $PYTHON_PORTABLE_URL"
-        
-        if command -v wget &> /dev/null; then
-            if ! wget --show-progress -O "$PYTHON_PORTABLE_TAR_PATH" "$PYTHON_PORTABLE_URL"; then
-                echo "[ERROR] Download failed with wget."
-                rm -f "$PYTHON_PORTABLE_TAR_PATH"
-                echo "[FALLBACK] Will use system Python instead."
-            fi
-        elif command -v curl &> /dev/null; then
-            if ! curl -L -# -o "$PYTHON_PORTABLE_TAR_PATH" "$PYTHON_PORTABLE_URL"; then
-                echo "[ERROR] Download failed with curl."
-                rm -f "$PYTHON_PORTABLE_TAR_PATH"
-                echo "[FALLBACK] Will use system Python instead."
-            fi
-        else
-            echo "[WARNING] Neither wget nor curl found. Will use system Python."
+
+        if ! download_with_fallback "$PYTHON_PORTABLE_URL" "$PYTHON_PORTABLE_TAR_PATH"; then
+            echo "[ERROR] Download failed with all available mechanisms (wget/curl/python3)."
+            echo "[FALLBACK] Will use system Python instead."
+        fi
+
+        # A freshly downloaded file that fails verification is not recoverable by retrying -
+        # abort rather than loop.
+        if [ -f "$PYTHON_PORTABLE_TAR_PATH" ]; then
+            verify_artifact "$PYTHON_PORTABLE_TAR_PATH" "$PYTHON_PORTABLE_TAR" "$CHECKSUM_MANIFEST"
+            case "$VERIFY_RESULT" in
+                MATCH) echo "[SECURITY] Hash verified." ;;
+                UNVERIFIED) echo "[WARNING] No pinned hash for $PYTHON_PORTABLE_TAR; skipping integrity check." ;;
+                MISMATCH)
+                    echo "[CRITICAL] Downloaded $PYTHON_PORTABLE_TAR failed hash verification. Aborting."
+                    rm -f "$PYTHON_PORTABLE_TAR_PATH"
+                    exit 1
+                    ;;
+            esac
         fi
     fi
-    
+
     # Extract portable Python if tar exists
     if [ -f "$PYTHON_PORTABLE_TAR_PATH" ]; then
         echo "[EXTRACT] Extracting portable Python..."

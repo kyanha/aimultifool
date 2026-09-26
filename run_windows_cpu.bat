@@ -11,6 +11,7 @@ set "PYTHON_PORTABLE_TAR=cpython-3.12.12+20260114-x86_64-pc-windows-msvc-install
 set "PYTHON_PORTABLE_URL=https://aimultifool.com/%PYTHON_PORTABLE_TAR%"
 set "PYTHON_PORTABLE_TAR_PATH=%PYTHON_PORTABLE_DIR%\%PYTHON_PORTABLE_TAR%"
 set "PYTHON_CMD=py"
+set "CHECKSUM_MANIFEST=%SCRIPT_DIR%\checksums.sha256"
 
 echo ----------------------------------------------------------------
 echo   aiMultiFool Suite - CPU-Only Setup ^& Launch Script v0.1.9 (Windows)
@@ -19,35 +20,55 @@ echo ----------------------------------------------------------------
 :: 0. Setup Portable Python
 if not exist "%PYTHON_PORTABLE_DIR%\python.exe" (
     echo [PYTHON] Portable Python not found. Setting up...
-    
+
     :: Create python_portable directory
     if not exist "%PYTHON_PORTABLE_DIR%" mkdir "%PYTHON_PORTABLE_DIR%"
-    
+
+    :: If a cached tarball exists, verify it before trusting it. A mismatch means the
+    :: cache is bad (corrupted or tampered) - remove it and fall through to a fresh download.
+    if exist "%PYTHON_PORTABLE_TAR_PATH%" (
+        call "%SCRIPT_DIR%\verify_hash.bat" "%PYTHON_PORTABLE_TAR_PATH%" "%PYTHON_PORTABLE_TAR%" "%CHECKSUM_MANIFEST%"
+        if "!VERIFY_RESULT!"=="MISMATCH" (
+            echo [SECURITY] Cached %PYTHON_PORTABLE_TAR% failed hash verification.
+            del "%PYTHON_PORTABLE_TAR_PATH%" 2>nul
+            if exist "%PYTHON_PORTABLE_TAR_PATH%" (
+                echo [CRITICAL] Could not remove bad cached file. Aborting.
+                exit /b 1
+            ) else (
+                echo [SECURITY] Removed bad cached file; will re-download.
+            )
+        ) else if "!VERIFY_RESULT!"=="UNVERIFIED" (
+            echo [WARNING] No pinned hash for %PYTHON_PORTABLE_TAR%; skipping integrity check.
+        )
+    )
+
     :: Download portable Python if tar doesn't exist
     if not exist "%PYTHON_PORTABLE_TAR_PATH%" (
         echo [NETWORK] Downloading portable Python 3.12 ^(~50MB^)...
         echo [SOURCE]  %PYTHON_PORTABLE_URL%
-        
-        :: Try curl first (available on Windows 10+), then PowerShell
-        where curl >nul 2>&1
-        if !errorlevel! equ 0 (
-            curl -L --progress-bar -o "%PYTHON_PORTABLE_TAR_PATH%" "%PYTHON_PORTABLE_URL%"
-            if !errorlevel! neq 0 (
-                echo [ERROR] Download failed with curl.
+
+        call "%SCRIPT_DIR%\download_file.bat" "%PYTHON_PORTABLE_URL%" "%PYTHON_PORTABLE_TAR_PATH%"
+        if !errorlevel! neq 0 (
+            echo [ERROR] Download failed with all available mechanisms ^(curl/PowerShell/certutil^).
+            echo [FALLBACK] Will use system Python instead.
+        )
+
+        :: A freshly downloaded file that fails verification is not recoverable by
+        :: retrying - abort rather than loop.
+        if exist "%PYTHON_PORTABLE_TAR_PATH%" (
+            call "%SCRIPT_DIR%\verify_hash.bat" "%PYTHON_PORTABLE_TAR_PATH%" "%PYTHON_PORTABLE_TAR%" "%CHECKSUM_MANIFEST%"
+            if "!VERIFY_RESULT!"=="MISMATCH" (
+                echo [CRITICAL] Downloaded %PYTHON_PORTABLE_TAR% failed hash verification. Aborting.
                 del "%PYTHON_PORTABLE_TAR_PATH%" 2>nul
-                echo [FALLBACK] Will use system Python instead.
-            )
-        ) else (
-            echo [INFO] Using PowerShell for download...
-            powershell -Command "& { $ProgressPreference = 'Continue'; Invoke-WebRequest -Uri '%PYTHON_PORTABLE_URL%' -OutFile '%PYTHON_PORTABLE_TAR_PATH%' }"
-            if !errorlevel! neq 0 (
-                echo [ERROR] Download failed with PowerShell.
-                del "%PYTHON_PORTABLE_TAR_PATH%" 2>nul
-                echo [FALLBACK] Will use system Python instead.
+                exit /b 1
+            ) else if "!VERIFY_RESULT!"=="UNVERIFIED" (
+                echo [WARNING] No pinned hash for %PYTHON_PORTABLE_TAR%; skipping integrity check.
+            ) else (
+                echo [SECURITY] Hash verified.
             )
         )
     )
-    
+
     :: Extract portable Python if tar exists
     if exist "%PYTHON_PORTABLE_TAR_PATH%" (
         echo [EXTRACT] Extracting portable Python...
