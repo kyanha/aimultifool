@@ -18,9 +18,11 @@ aiMultiFool is designed with a "Privacy First" architecture. All Large Language 
 - **Portable Python**: The launch scripts download Python 3.12.12 (~50MB) from `aimultifool.com` on first launch.
   - **Purpose**: Bundled Python distribution eliminates the need for users to install Python separately.
   - **Privacy**: Direct file download with no telemetry attached. Python is cached locally in `python_portable/` directory.
+  - **Integrity**: SHA-256 hash pinned in `checksums.sha256` and checked on every run (see `verify_hash.sh`/`.bat`). The pinned hash was independently verified against the matching upstream [python-build-standalone release asset](https://github.com/astral-sh/python-build-standalone/releases/tag/20260114) — this is the actual evidence behind the provenance claim in Section 4, not just an assertion.
 - **CUDA Wheel**: The launch scripts download a Universal Multi-Arch CUDA Wheel (~339MB for Linux, ~235MB for Windows) from `aimultifool.com`.
   - **Purpose**: Pre-compiled `llama-cpp-python` backend to ensure GPU acceleration.
   - **Privacy**: Direct file download with no telemetry attached.
+  - **Integrity**: No upstream release exists to verify against (`abetlen/llama-cpp-python` does not publish prebuilt CUDA wheels), so this artifact is self-hosted and marked `UNVERIFIED` in `checksums.sha256` pending independent confirmation — e.g. by rebuilding via `llama.cpp/build_windows.bat` and comparing hashes.
 
 ### ✅ External Integration (Links)
 - **Action**: Clicking community links (Discord, Ko-fi, Website) opens the target URL in your **system's default web browser**.
@@ -58,7 +60,7 @@ aiMultiFool is designed with a "Privacy First" architecture. All Large Language 
 ---
 
 ## 4. Dependencies Review
-- **Python 3.12.12**: Bundled portable Python distribution from [python-build-standalone](https://github.com/astral-sh/python-build-standalone) (MPL-2.0 license). Downloaded on first launch and cached locally.
+- **Python 3.12.12**: Bundled portable Python distribution from [python-build-standalone](https://github.com/astral-sh/python-build-standalone) (MPL-2.0 license). Downloaded on first launch and cached locally. Provenance is hash-verified, not just asserted — see the Integrity note under Section 2.
 - **`llama-cpp-python`**: Local C++ bindings for inference.
 - **`textual` / `rich`**: TUI framework (Terminal-only).
 - **`requests`**: Only used for initiated model downloads.
@@ -71,6 +73,6 @@ aiMultiFool is designed with a "Privacy First" architecture. All Large Language 
 aiMultiFool **cannot** see, read, or store your conversations. Your roleplay sessions are entirely your own and exist only as long as the application window is open.
 
 ---
-**Last Updated**: January 2026
+**Last Updated**: September 2026
 
 
