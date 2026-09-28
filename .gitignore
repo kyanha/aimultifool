@@ -135,3 +135,6 @@ cards/*
 
 # Debug Scripts
 vectors/
+
+# Personal Claude Code settings (not team-wide)
+.claude/settings.local.json
