@@ -73,7 +73,18 @@ if [ -d "$DEST_DIR" ]; then
 fi
 
 echo "7. Verifying CUDA support..."
-python3 -c "from llama_cpp import Llama; print('CUDA Support:', 'CUDA' in Llama.build_info())"
+if [[ "$VIRTUAL_ENV" != "" ]]; then
+    # Exit non-zero when CUDA is missing: a "CUDA" wheel without CUDA is a failed build.
+    python3 -c "
+import sys
+from llama_cpp import Llama
+ok = 'CUDA' in Llama.build_info()
+print('CUDA Support:', ok)
+sys.exit(0 if ok else 1)
+" || { echo "Error: built wheel does not report CUDA support (or could not be imported)"; exit 1; }
+else
+    echo "Skipping verification: wheel was not installed (no virtual environment)."
+fi
 
 echo ""
 echo "Build completed successfully!"

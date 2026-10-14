@@ -63,9 +63,20 @@ if not defined VS_PATH (
 if defined VCVARS (
     echo Initializing Visual Studio environment from: %VCVARS%
     call "%VCVARS%" x64
+    if !errorlevel! neq 0 (
+        echo Error: Visual Studio environment setup ^(vcvarsall.bat^) failed
+        exit /b 1
+    )
 ) else (
-    echo Warning: Could not find Visual Studio vcvarsall.bat
-    echo Build may fail. Please install Visual Studio Build Tools.
+    :: No vcvarsall.bat found. That is only acceptable if we are already in a
+    :: developer prompt, i.e. the MSVC compiler is on PATH.
+    where cl >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo Error: Could not find Visual Studio vcvarsall.bat and cl.exe is not on PATH
+        echo Please install Visual Studio Build Tools.
+        exit /b 1
+    )
+    echo Warning: Could not find vcvarsall.bat; using cl.exe already on PATH
 )
 
 :: Create build directory
@@ -73,10 +84,22 @@ set "BUILD_DIR=llama_cpp_build"
 if exist "%BUILD_DIR%" (
     echo Removing existing build directory...
     rmdir /s /q "%BUILD_DIR%"
+    if exist "%BUILD_DIR%" (
+        echo Error: Could not remove existing build directory
+        exit /b 1
+    )
 )
 
 mkdir "%BUILD_DIR%"
+if !errorlevel! neq 0 (
+    echo Error: Could not create build directory
+    exit /b 1
+)
 cd "%BUILD_DIR%"
+if !errorlevel! neq 0 (
+    echo Error: Could not enter build directory
+    exit /b 1
+)
 
 echo.
 echo 1. Cloning llama-cpp-python repository...
@@ -86,6 +109,10 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 cd llama-cpp-python
+if !errorlevel! neq 0 (
+    echo Error: Could not enter cloned repository
+    exit /b 1
+)
 
 echo.
 echo 2. Pulling submodules...
@@ -120,8 +147,18 @@ echo.
 echo 5. Installing the built wheel...
 if defined VIRTUAL_ENV (
     echo Virtual environment detected: %VIRTUAL_ENV%
+    set "INSTALLED_ANY=0"
     for %%f in (dist\llama_cpp_python-*.whl) do (
         py -m pip install "%%f" --force-reinstall
+        if !errorlevel! neq 0 (
+            echo Error: Failed to install %%f
+            exit /b 1
+        )
+        set "INSTALLED_ANY=1"
+    )
+    if "!INSTALLED_ANY!"=="0" (
+        echo Error: No wheel found in dist\ to install
+        exit /b 1
     )
 ) else (
     echo No virtual environment detected. Wheel built successfully but not installed.
@@ -134,15 +171,34 @@ set "DEST_DIR=%ROOT_DIR%\llama.cpp"
 if exist "%DEST_DIR%" (
     echo.
     echo 6. Copying built wheel to project directory...
+    set "COPIED_ANY=0"
     for %%f in (dist\llama_cpp_python-*.whl) do (
         copy "%%f" "%DEST_DIR%\"
+        if !errorlevel! neq 0 (
+            echo Error: Failed to copy %%f to %DEST_DIR%
+            exit /b 1
+        )
+        set "COPIED_ANY=1"
+    )
+    if "!COPIED_ANY!"=="0" (
+        echo Error: No wheel found in dist\ to copy
+        exit /b 1
     )
     echo Wheel copied to %DEST_DIR%
 )
 
 echo.
 echo 7. Verifying CUDA support...
-py -c "from llama_cpp import Llama; print('CUDA Support:', 'CUDA' in Llama.build_info())"
+if defined VIRTUAL_ENV (
+    :: Exit non-zero when CUDA is missing: a "CUDA" wheel without CUDA is a failed build.
+    py -c "import sys; from llama_cpp import Llama; ok = 'CUDA' in Llama.build_info(); print('CUDA Support:', ok); sys.exit(0 if ok else 1)"
+    if !errorlevel! neq 0 (
+        echo Error: built wheel does not report CUDA support ^(or could not be imported^)
+        exit /b 1
+    )
+) else (
+    echo Skipping verification: wheel was not installed ^(no virtual environment^).
+)
 
 echo.
 echo ====================================================================
