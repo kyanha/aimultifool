@@ -42,6 +42,24 @@ except ImportError:
 # Global lock to prevent concurrent inference operations
 _inference_lock = threading.Lock()
 
+_quiet_log_callback = None
+
+
+def _new_llama(**kwargs):
+    """Create a llama_cpp.Llama without console redirection.
+
+    verbose=False makes llama-cpp-python dup2() stdout/stderr to NUL while loading,
+    which deadlocks against Textual's console writer on Windows (UI freezes, load
+    never finishes). Instead, keep verbose=True and silence llama.cpp's native log
+    with a no-op callback; the remaining Python-side prints are captured by Textual.
+    """
+    global _quiet_log_callback
+    import llama_cpp
+    if _quiet_log_callback is None:
+        _quiet_log_callback = llama_cpp.llama_log_callback(lambda level, text, user_data: None)
+        llama_cpp.llama_log_set(_quiet_log_callback, None)
+    return llama_cpp.Llama(verbose=True, **kwargs)
+
 class InferenceMixin:
     """Mixin for handling AI inference and model loading tasks."""
     
@@ -361,12 +379,10 @@ class InferenceMixin:
                         # Small delay to allow UI to update before blocking
                         time.sleep(0.05)
                         
-                        # This call can hold GIL in native code on Windows
-                        llm = llama_cpp.Llama(
+                        llm = _new_llama(
                             model_path=model_path_str,
                             n_ctx=int(context_size),
                             n_gpu_layers=int(layers),
-                            verbose=False,
                         )
                         actual_layers = int(layers)
                         break
@@ -1504,13 +1520,11 @@ class VectorMixin:
                             pass
                         # Fall through to direct llama_cpp path
                         if not hasattr(self, "_embed_llm") or self._embed_llm is None:
-                            import llama_cpp
-                            self._embed_llm = llama_cpp.Llama(
+                            self._embed_llm = _new_llama(
                                 model_path=str(embed_model_path),
                                 n_ctx=2048,
                                 n_gpu_layers=0,
                                 embedding=True,
-                                verbose=False,
                             )
                         prefix = "search_document: " if task == "document" else "search_query: "
                         emb_result = self._embed_llm.create_embedding(prefix + text)
@@ -1567,13 +1581,11 @@ class VectorMixin:
             else:
                 # Non-Windows: Use direct llama_cpp
                 if not hasattr(self, "_embed_llm") or self._embed_llm is None:
-                    import llama_cpp
-                    self._embed_llm = llama_cpp.Llama(
+                    self._embed_llm = _new_llama(
                         model_path=str(embed_model_path),
                         n_ctx=2048,
                         n_gpu_layers=0,
                         embedding=True,
-                        verbose=False,
                     )
                 prefix = "search_document: " if task == "document" else "search_query: "
                 emb_result = self._embed_llm.create_embedding(prefix + text)
