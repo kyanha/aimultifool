@@ -107,6 +107,9 @@ website/
 # Large Binary Files & Build Artifacts
 *.whl
 llama_cpp_build/
+build_deps/
+.toolchain_installed.txt
+.toolchain_installed.txt.new
 dist/
 build/
 *.egg-info/
